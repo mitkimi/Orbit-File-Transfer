@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Transfer - Desktop</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .status-panel {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .file-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .file-card {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            text-align: center;
+            background: white;
+        }
+        .file-thumb {
+            width: 100%;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 3px;
+        }
+        .file-name {
+            font-size: 12px;
+            word-break: break-word;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖥️ Desktop File Transfer Interface</h1>
+        
+        <div class="status-panel">
+            <h3>Status Information</h3>
+            <p><strong>Server Status:</strong> <span id="server-status">Running</span></p>
+            <p><strong>IP Address:</strong> <span id="server-ip">Detecting...</span></p>
+            <p><strong>Total Files:</strong> <span id="total-files">0</span></p>
+        </div>
+        
+        <h3>Uploaded Files:</h3>
+        <div id="file-grid" class="file-grid">
+            <p>No files uploaded yet.</p>
+        </div>
+    </div>
+
+    <script>
+        async function loadStatus() {
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+                
+                document.getElementById('server-ip').textContent = data.ip_address || 'Unknown';
+                document.getElementById('total-files').textContent = data.total_files;
+                
+                const fileGrid = document.getElementById('file-grid');
+                if (data.files.length > 0) {
+                    let html = '';
+                    data.files.forEach(file => {
+                        // Determine if it's an image file to show thumbnail
+                        const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(file.name);
+                        let thumbHtml = '';
+                        
+                        if (isImage) {
+                            thumbHtml = `<img src="/uploads/${encodeURIComponent(file.name)}" alt="${file.name}" class="file-thumb">`;
+                        } else {
+                            thumbHtml = `<div style="height: 100px; display: flex; align-items: center; justify-content: center; background: #f8f9fa;">📄</div>`;
+                        }
+                        
+                        html += `
+                        <div class="file-card">
+                            ${thumbHtml}
+                            <div class="file-name">${file.name}</div>
+                            <small>${Math.round(file.size/1024)} KB</small>
+                        </div>`;
+                    });
+                    fileGrid.innerHTML = html;
+                } else {
+                    fileGrid.innerHTML = '<p>No files uploaded yet.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading status:', error);
+            }
+        }
+
+        // Load status on page load and every 5 seconds
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStatus();
+            setInterval(loadStatus, 5000);
+        });
+    </script>
+</body>
+</html>

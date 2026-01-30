@@ -3,6 +3,11 @@ uploaded/*
 # But keep the directory itself (if needed for project structure)
 !uploaded/.gitkeep
 
+# PyInstaller build outputs
+build/
+dist/
+*.spec
+
 # Other common ignores
 __pycache__/
 *.pyc
