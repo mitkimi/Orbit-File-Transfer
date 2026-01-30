@@ -1,0 +1,147 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            target: linux
+            artifact_name: orbit-file-transfer-linux
+            exe_suffix: ''
+          - os: windows-latest
+            target: windows
+            artifact_name: orbit-file-transfer-windows
+            exe_suffix: '.exe'
+          - os: macos-latest
+            target: macos
+            artifact_name: orbit-file-transfer-macos
+            exe_suffix: ''
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller
+          pip install -r requirements.txt
+        if: runner.os != 'Windows'
+
+      - name: Install dependencies on Windows
+        run: |
+          pip install pyinstaller
+          pip install -r requirements.txt
+        if: runner.os == 'Windows'
+
+      - name: Build executable with PyInstaller
+        run: |
+          pyinstaller --onefile --windowed --add-data "templates;templates" --add-data "icon.png;." --add-data "icon.ico;." --name "OrbitFileTransfer" main.py
+        continue-on-error: true
+
+      - name: Alternative build if templates cause issues
+        run: |
+          pyinstaller --onefile --windowed --name "OrbitFileTransfer" main.py
+        if: failure()
+        continue-on-error: true
+
+      - name: Find executable
+        id: find_exe
+        run: |
+          if [ -f "dist/OrbitFileTransfer${{ matrix.exe_suffix }}" ]; then
+            echo "EXECUTABLE_PATH=dist/OrbitFileTransfer${{ matrix.exe_suffix }}" >> $GITHUB_ENV
+          elif [ -f "dist/main${{ matrix.exe_suffix }}" ]; then
+            echo "EXECUTABLE_PATH=dist/main${{ matrix.exe_suffix }}" >> $GITHUB_ENV
+          else
+            echo "No executable found"
+            exit 1
+          fi
+        if: runner.os != 'Windows'
+
+      - name: Find executable on Windows
+        id: find_exe_win
+        run: |
+          if (Test-Path "dist\\OrbitFileTransfer${{ matrix.exe_suffix }}") {
+            echo "EXECUTABLE_PATH=dist\\OrbitFileTransfer${{ matrix.exe_suffix }}" >> $env:GITHUB_ENV
+          } elseif (Test-Path "dist\\main${{ matrix.exe_suffix }}") {
+            echo "EXECUTABLE_PATH=dist\\main${{ matrix.exe_suffix }}" >> $env:GITHUB_ENV
+          } else {
+            Write-Host "No executable found"
+            exit 1
+          }
+        if: runner.os == 'Windows'
+        shell: pwsh
+
+      - name: Create release assets directory
+        run: |
+          mkdir release_assets
+          cp "${{ env.EXECUTABLE_PATH }}" "release_assets/OrbitFileTransfer-${{ matrix.target }}${{ matrix.exe_suffix }}"
+          cp README.md release_assets/
+          cp LICENSE release_assets/  # Include if exists
+          cp -r templates release_assets/  # Include templates if needed separately
+          if [ -f "icon.png" ]; then cp icon.png release_assets/; fi
+          if [ -f "icon.ico" ]; then cp icon.ico release_assets/; fi
+
+      - name: Archive release assets
+        run: |
+          if [ "${{ matrix.target }}" = "windows" ]; then
+            7z a "orbit-file-transfer-${{ matrix.target }}-${{ github.ref_name }}.zip" release_assets/*
+          else
+            tar -czf "orbit-file-transfer-${{ matrix.target }}-${{ github.ref_name }}.tar.gz" -C release_assets .
+          fi
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-${{ github.ref_name }}
+          path: |
+            orbit-file-transfer-${{ matrix.target }}-${{ github.ref_name }}.*
+            !*.zip
+            !*.tar.gz
+
+  create-release:
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Display structure of downloaded files
+        run: |
+          ls -R
+          find . -name "*.zip" -o -name "*.tar.gz"
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Assets
+        run: |
+          for asset in $(find . -name "*.zip" -o -name "*.tar.gz"); do
+            echo "Uploading: $asset"
+            gh release upload ${{ github.ref_name }} "$asset" --clobber
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

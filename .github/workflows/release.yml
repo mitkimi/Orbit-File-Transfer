@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Get tag
+        id: tag
+        run: |
+          echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ steps.tag.outputs.tag }}
+          draft: false
+          prerelease: false
+          
+      - name: Zip Source Code
+        run: |
+          zip -r orbit-file-transfer-${{ steps.tag.outputs.tag }}.zip . -x ".git/*" ".github/*" ".gitignore" "README.md" "PROJECT_SUMMARY.md"
+          
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./orbit-file-transfer-${{ steps.tag.outputs.tag }}.zip
+          asset_name: orbit-file-transfer-${{ steps.tag.outputs.tag }}.zip
+          asset_content_type: application/zip

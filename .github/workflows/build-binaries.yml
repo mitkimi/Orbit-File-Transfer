@@ -1,0 +1,132 @@
+name: Build Cross-Platform Executables
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            TARGET: win
+            EXE_NAME: OrbitFileTransfer.exe
+            ASSET_NAME: OrbitFileTransfer-Windows.zip
+          - os: ubuntu-latest
+            TARGET: linux
+            EXE_NAME: OrbitFileTransfer
+            ASSET_NAME: OrbitFileTransfer-Linux.tar.gz
+          - os: macos-latest
+            TARGET: macos
+            EXE_NAME: OrbitFileTransfer
+            ASSET_NAME: OrbitFileTransfer-macOS.zip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+        shell: bash
+
+      - name: Install dependencies (Windows)
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+
+      - name: Build executable
+        run: |
+          pyinstaller --onefile --windowed --name OrbitFileTransfer --add-data "templates;templates" --add-data "icon.png;." --add-data "icon.ico;." main.py
+        shell: bash
+
+      - name: Build executable (Windows)
+        run: |
+          pyinstaller --onefile --windowed --name OrbitFileTransfer --add-data "templates;templates" --add-data "icon.png;." --add-data "icon.ico;." main.py
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+
+      - name: Prepare assets (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          mkdir package
+          cp dist\OrbitFileTransfer.exe package\
+          cp README.md package\
+          cp -Recurse templates package\
+          if (Test-Path icon.png) { cp icon.png package\ }
+          if (Test-Path icon.ico) { cp icon.ico package\ }
+          Compress-Archive -Path package\* -DestinationPath ${{ matrix.ASSET_NAME }}
+        shell: pwsh
+
+      - name: Prepare assets (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p package
+          cp dist/OrbitFileTransfer package/
+          chmod +x package/OrbitFileTransfer
+          cp README.md package/
+          cp -r templates package/
+          if [ -f "icon.png" ]; then cp icon.png package/; fi
+          if [ -f "icon.ico" ]; then cp icon.ico package/; fi
+          
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            tar -czf ${{ matrix.ASSET_NAME }} -C package .
+          else
+            zip -r ${{ matrix.ASSET_NAME }} package/*
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.TARGET }}-binaries
+          path: ${{ matrix.ASSET_NAME }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Display structure
+        run: ls -R
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Assets
+        run: |
+          for asset in */*.zip */*.tar.gz; do
+            if [ -f "$asset" ]; then
+              echo "Uploading $asset"
+              gh release upload ${{ github.ref_name }} "$asset" --clobber
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
