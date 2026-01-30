@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Transfer - Mobile</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .status {
+            text-align: center;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .upload-section {
+            margin: 20px 0;
+            text-align: center;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+            width: 100%;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .progress-container {
+            margin: 20px 0;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #28a745;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        .file-list {
+            margin-top: 20px;
+        }
+        .file-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 File Transfer</h1>
+        
+        <div id="connection-status" class="status disconnected">
+            Connecting...
+        </div>
+        
+        <div class="upload-section">
+            <input type="file" id="file-input" multiple accept="image/*">
+            <br>
+            <button id="upload-btn">📤 Upload Files</button>
+        </div>
+        
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div id="progress-text">0%</div>
+        </div>
+        
+        <div class="file-list">
+            <h3>Uploaded Files:</h3>
+            <div id="file-list-content">No files uploaded yet.</div>
+        </div>
+    </div>
+
+    <script>
+        // Check connection status
+        async function checkConnection() {
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+                
+                const statusDiv = document.getElementById('connection-status');
+                if (data.connected) {
+                    statusDiv.className = 'status connected';
+                    statusDiv.textContent = `Connected! Server: ${data.ip_address}`;
+                } else {
+                    statusDiv.className = 'status disconnected';
+                    statusDiv.textContent = 'Disconnected from server';
+                }
+                
+                // Update file list
+                updateFileList(data.files);
+                
+                return data.connected;
+            } catch (error) {
+                console.error('Connection error:', error);
+                const statusDiv = document.getElementById('connection-status');
+                statusDiv.className = 'status disconnected';
+                statusDiv.textContent = 'Error connecting to server';
+                return false;
+            }
+        }
+
+        function updateFileList(files) {
+            const fileListContent = document.getElementById('file-list-content');
+            
+            if (files.length === 0) {
+                fileListContent.innerHTML = 'No files uploaded yet.';
+                return;
+            }
+            
+            let html = '<ul>';
+            files.forEach(file => {
+                html += `<li class="file-item">${file.name} (${Math.round(file.size/1024)} KB)</li>`;
+            });
+            html += '</ul>';
+            
+            fileListContent.innerHTML = html;
+        }
+
+        async function uploadFiles() {
+            const fileInput = document.getElementById('file-input');
+            const files = fileInput.files;
+            
+            if (files.length === 0) {
+                alert('Please select at least one file to upload.');
+                return;
+            }
+
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) {
+                formData.append('files', files[i]);
+            }
+
+            // Show progress
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            progressFill.style.width = '0%';
+            progressText.textContent = '0%';
+
+            try {
+                // Note: Actual progress tracking would require more advanced implementation
+                // For now, we'll simulate progress during upload
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    progressFill.style.width = '100%';
+                    progressText.textContent = '100% - Upload Complete!';
+                    
+                    // Reset form and refresh file list
+                    fileInput.value = '';
+                    setTimeout(() => {
+                        checkConnection();
+                        progressFill.style.width = '0%';
+                        progressText.textContent = '0%';
+                    }, 1000);
+                    
+                    alert(`Successfully uploaded ${result.files.length} file(s)!`);
+                } else {
+                    alert('Upload failed: ' + result.message);
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                alert('Upload failed: ' + error.message);
+            }
+        }
+
+        // Set up event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('upload-btn').addEventListener('click', uploadFiles);
+            
+            // Check connection status every 5 seconds
+            setInterval(checkConnection, 5000);
+            
+            // Initial connection check
+            checkConnection();
+        });
+    </script>
+</body>
+</html>

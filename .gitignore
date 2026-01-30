@@ -1,0 +1,29 @@
+# Ignore all files in the uploaded directory
+uploaded/*
+# But keep the directory itself (if needed for project structure)
+!uploaded/.gitkeep
+
+# Other common ignores
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+.venv/
+.env
+.pytest_cache/
+.coverage
+.git/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
