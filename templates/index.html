@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Transfer - Mobile</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
+    <title>Orbit File Transfer toolkit - Mobile</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -22,84 +22,131 @@
         h1 {
             color: #333;
             text-align: center;
+            font-size: 24px;
         }
         .status {
-            text-align: center;
             padding: 10px;
             margin: 10px 0;
             border-radius: 5px;
+            font-weight: bold;
         }
+        
         .connected {
             background-color: #d4edda;
             color: #155724;
-            border: 1px solid #c3e6cb;
         }
+        
         .disconnected {
             background-color: #f8d7da;
             color: #721c24;
-            border: 1px solid #f5c6cb;
         }
+        
         .upload-section {
             margin: 20px 0;
-            text-align: center;
         }
-        input[type="file"] {
-            margin: 10px 0;
-            width: 100%;
-        }
-        button {
+        
+        #upload-btn {
             background-color: #007bff;
             color: white;
             border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
+            padding: 20px 40px;  /* Increased padding for larger button */
+            font-size: 20px;     /* Increased font size */
+            border-radius: 10px; /* Increased border radius */
             cursor: pointer;
-            font-size: 16px;
+            display: inline-block;
+            width: auto;
+            min-height: 60px;    /* Minimum height for easier tapping */
         }
-        button:hover {
+        
+        #upload-btn:hover {
             background-color: #0056b3;
         }
-        button:disabled {
+        
+        #upload-btn:disabled {
             background-color: #6c757d;
             cursor: not-allowed;
         }
+        
         .progress-container {
             margin: 20px 0;
+            position: relative;
         }
+        
         .progress-bar {
             width: 100%;
-            height: 20px;
-            background-color: #e9ecef;
-            border-radius: 10px;
+            height: 30px;       /* Increased height to accommodate text */
+            background-color: #e0e0e0;
+            border-radius: 15px; /* Increased border radius */
             overflow: hidden;
+            position: relative;
+            display: flex;
+            align-items: center;
         }
+        
         .progress-fill {
             height: 100%;
             background-color: #28a745;
             width: 0%;
-            transition: width 0.3s;
+            transition: width 0.3s ease;
+            position: absolute;
+            top: 0;
+            left: 0;
         }
+        
+        #progress-text {
+            position: absolute;
+            width: 100%;
+            text-align: center;
+            font-weight: bold;
+            font-size: 14px;
+            color: #333;
+            z-index: 2;
+            pointer-events: none;
+        }
+        
         .file-list {
             margin-top: 20px;
+            text-align: left;
         }
+        
         .file-item {
-            padding: 10px;
-            border-bottom: 1px solid #eee;
+            padding: 12px;      /* Increased padding */
+            margin: 8px 0;      /* Increased margin */
+            background-color: #f8f9fa;
+            border-radius: 6px; /* Increased border radius */
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .file-name {
+            flex-grow: 1;
+            font-size: 16px;    /* Increased font size */
+            word-break: break-all;
+        }
+        .file-size {
+            font-size: 14px;    /* Increased font size */
+            color: #6c757d;
+            margin-right: 10px;
+        }
+        .file-status-indicator {
+            font-weight: bold;
+            min-width: 100px;   /* Increased width */
+            text-align: right;
+            font-size: 14px;    /* Increased font size */
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📱 File Transfer</h1>
+        <h1>📱 Orbit File Transfer</h1>
         
         <div id="connection-status" class="status disconnected">
             Connecting...
         </div>
         
         <div class="upload-section">
-            <input type="file" id="file-input" multiple accept="image/*">
-            <br>
-            <button id="upload-btn">📤 Upload Files</button>
+            <input type="file" id="file-input" multiple accept="*" style="display: none;">
+            <button id="upload-btn">📁 Select & Upload Files</button>
         </div>
         
         <div class="progress-container">
@@ -107,6 +154,11 @@
                 <div class="progress-fill" id="progress-fill"></div>
             </div>
             <div id="progress-text">0%</div>
+        </div>
+        
+        <div class="file-status" id="file-status-container">
+            <h3>File Upload Status:</h3>
+            <div id="file-status-list">No files selected yet.</div>
         </div>
         
         <div class="file-list">
@@ -170,10 +222,26 @@
                 return;
             }
 
-            const formData = new FormData();
-            for (let i = 0; i < files.length; i++) {
-                formData.append('files', files[i]);
-            }
+            // Disable upload button and show file status
+            const uploadBtn = document.getElementById('upload-btn');
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = 'Uploading...';
+            
+            // Display file statuses
+            const fileStatusList = document.getElementById('file-status-list');
+            fileStatusList.innerHTML = '';
+            
+            Array.from(files).forEach(file => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-status-item';
+                fileItem.id = `status-${file.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                fileItem.innerHTML = `
+                    <span class="file-name">${file.name}</span>
+                    <span class="file-size">(${formatFileSize(file.size)})</span>
+                    <span class="file-status-indicator" id="indicator-${file.name.replace(/[^a-zA-Z0-9]/g, '_')}">⏳ WAITING</span>
+                `;
+                fileStatusList.appendChild(fileItem);
+            });
 
             // Show progress
             const progressFill = document.getElementById('progress-fill');
@@ -182,40 +250,133 @@
             progressText.textContent = '0%';
 
             try {
-                // Note: Actual progress tracking would require more advanced implementation
-                // For now, we'll simulate progress during upload
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
+                // Upload files in parallel with limited concurrency (3-5 channels)
+                const maxConcurrency = Math.min(5, Math.max(3, files.length)); // Between 3-5 channels
+                const uploadedFiles = [];
+                let completedCount = 0;
 
-                const result = await response.json();
-                
-                if (result.success) {
-                    progressFill.style.width = '100%';
-                    progressText.textContent = '100% - Upload Complete!';
+                // Create a copy of files array to process
+                const filesArray = Array.from(files);
+
+                // Process files in chunks based on max concurrency
+                for (let i = 0; i < filesArray.length; i += maxConcurrency) {
+                    const chunk = filesArray.slice(i, i + maxConcurrency);
                     
-                    // Reset form and refresh file list
-                    fileInput.value = '';
-                    setTimeout(() => {
-                        checkConnection();
-                        progressFill.style.width = '0%';
-                        progressText.textContent = '0%';
-                    }, 1000);
+                    // Upload all files in the current chunk in parallel
+                    const chunkPromises = chunk.map(async (file) => {
+                        const fileNameClean = file.name.replace(/[^a-zA-Z0-9]/g, '_');
+                        const indicatorElement = document.getElementById(`indicator-${fileNameClean}`);
+                        
+                        if (indicatorElement) {
+                            indicatorElement.textContent = '⏳ UPLOADING';
+                            indicatorElement.style.color = '#ffc107';
+                        }
+                        
+                        // Prepare form data for single file
+                        const formData = new FormData();
+                        formData.append('files', file);
+                        
+                        try {
+                            const uploadResponse = await fetch('/upload', {
+                                method: 'POST',
+                                body: formData
+                            });
+
+                            const result = await uploadResponse.json();
+                            
+                            completedCount++;
+                            const totalProgress = (completedCount / filesArray.length) * 100;
+                            progressFill.style.width = `${totalProgress}%`;
+                            progressText.textContent = `${Math.round(totalProgress)}% - ${completedCount}/${filesArray.length} files`;
+
+                            if (result.success) {
+                                // Mark file as uploaded
+                                if (indicatorElement) {
+                                    indicatorElement.textContent = '✅ UPLOADED';
+                                    indicatorElement.style.color = '#28a745';
+                                }
+                                
+                                uploadedFiles.push(...result.files);
+                                return result;
+                            } else {
+                                // Mark file as failed
+                                if (indicatorElement) {
+                                    indicatorElement.textContent = '❌ FAILED';
+                                    indicatorElement.style.color = '#dc3545';
+                                }
+                                console.error(`Failed to upload ${file.name}:`, result.error);
+                                return null;
+                            }
+                        } catch (error) {
+                            completedCount++;
+                            const totalProgress = (completedCount / filesArray.length) * 100;
+                            progressFill.style.width = `${totalProgress}%`;
+                            progressText.textContent = `${Math.round(totalProgress)}% - ${completedCount}/${filesArray.length} files`;
+                            
+                            // Mark file as failed
+                            if (indicatorElement) {
+                                indicatorElement.textContent = '❌ FAILED';
+                                indicatorElement.style.color = '#dc3545';
+                            }
+                            console.error(`Upload error for ${file.name}:`, error);
+                            return null;
+                        }
+                    });
                     
-                    alert(`Successfully uploaded ${result.files.length} file(s)!`);
-                } else {
-                    alert('Upload failed: ' + result.message);
+                    // Wait for all files in the current chunk to complete
+                    await Promise.all(chunkPromises);
                 }
+                
+                // Final update after all files complete
+                progressFill.style.width = '100%';
+                progressText.textContent = '100% - All files processed!';
+                
+                // Re-enable button
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '📷 Select & Upload Files';
+                
+                // Reset form and refresh file list
+                fileInput.value = '';
+                setTimeout(() => {
+                    checkConnection();
+                    progressFill.style.width = '0%';
+                    progressText.textContent = '0%';
+                }, 1000);
+                
+                alert(`Successfully uploaded ${uploadedFiles.length} file(s)!`);
             } catch (error) {
+                // Re-enable button on error
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '📷 Select & Upload Files';
                 console.error('Upload error:', error);
                 alert('Upload failed: ' + error.message);
             }
         }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
 
         // Set up event listeners
         document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('upload-btn').addEventListener('click', uploadFiles);
+            // When upload button is clicked, trigger file input
+            const uploadBtn = document.getElementById('upload-btn');
+            const fileInput = document.getElementById('file-input');
+            
+            uploadBtn.addEventListener('click', function() {
+                fileInput.click();
+            });
+            
+            // When files are selected, automatically upload them
+            fileInput.addEventListener('change', function(event) {
+                if (event.target.files.length > 0) {
+                    uploadFiles();
+                }
+            });
             
             // Check connection status every 5 seconds
             setInterval(checkConnection, 5000);

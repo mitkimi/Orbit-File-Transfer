@@ -1,4 +1,4 @@
-# File Transfer Application
+# Orbit File Transfer Toolkit
 
 A Python-based file transfer application that allows users to transfer images from mobile devices to a desktop computer via a local network connection.
 

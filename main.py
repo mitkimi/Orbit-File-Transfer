@@ -12,9 +12,10 @@ import subprocess
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QPushButton, QTextEdit, QProgressBar
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QPushButton, QTextEdit, QProgressBar, QMessageBox
 from PyQt5.QtCore import QTimer, pyqtSignal, QObject, Qt
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QIcon
+from PyQt5.QtGui import QTextCursor
 import qrcode
 import io
 import base64
@@ -22,15 +23,24 @@ import base64
 
 # Configuration
 UPLOAD_FOLDER = 'uploaded'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'webp'}
-MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB max file size
+# Allow all file extensions since we want to support images, videos, and various Apple formats
+ALLOWED_EXTENSIONS = {''}  # Empty set means all extensions are allowed
+MAX_CONTENT_LENGTH = None  # No file size limit to accommodate large video files
 
 # Device-specific upload subdirectories
 import re
 
+
+def allowed_file(filename):
+    """Allow all file types since we want to support images, videos, and Apple formats"""
+    return True
+
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+if MAX_CONTENT_LENGTH is not None:
+    app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+else:
+    app.config['MAX_CONTENT_LENGTH'] = None
 
 # Global variables
 current_ip = None
@@ -111,7 +121,7 @@ def get_device_folder(user_agent):
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    """Handle file uploads from mobile device"""
+    """Handle file uploads from mobile device - one by one"""
     if 'files' not in request.files:
         return jsonify({'error': 'No files provided'}), 400
     
@@ -125,16 +135,17 @@ def upload_file():
     
     # Create a unique session for this upload
     session_id = str(uuid.uuid4())
-    upload_progress[session_id] = {'progress': 0, 'status': 'starting', 'total_files': len(files), 'uploaded_files': []}
+    upload_progress[session_id] = {'progress': 0, 'status': 'starting', 'total_files': len(files), 'uploaded_files': [], 'current_file': None}
     
     uploaded_files = []
     
     try:
         for idx, file in enumerate(files):
             if file and allowed_file(file.filename):
-                # Update progress
-                upload_progress[session_id]['progress'] = int((idx / len(files)) * 50)  # First 50% for processing
-                upload_progress[session_id]['status'] = f'Processing file {idx+1} of {len(files)}'
+                # Update progress and current file info
+                upload_progress[session_id]['progress'] = int((idx / len(files)) * 100)
+                upload_progress[session_id]['status'] = f'Uploading file {idx+1} of {len(files)}: {secure_filename(file.filename)}'
+                upload_progress[session_id]['current_file'] = secure_filename(file.filename)
                 
                 filename = secure_filename(file.filename)
                 filepath = os.path.join(device_folder, filename)
@@ -161,6 +172,7 @@ def upload_file():
         # Update progress to 100% after successful upload
         upload_progress[session_id]['progress'] = 100
         upload_progress[session_id]['status'] = 'completed'
+        upload_progress[session_id]['current_file'] = None
         
     except Exception as e:
         upload_progress[session_id]['progress'] = 0
@@ -234,17 +246,15 @@ def get_progress(session_id):
     return jsonify(progress)
 
 
-def allowed_file(filename):
-    """Check if the uploaded file is allowed"""
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("File Transfer App")
-        self.setGeometry(100, 100, 600, 500)
+        self.setWindowTitle("Orbit File Transfer toolkit")
+        self.setWindowIcon(QIcon('icon.png'))  # Set the application icon
+        self.setGeometry(100, 100, 600, 700)  # Increased height from 500 to 700
         
         # Create central widget and layout
         central_widget = QWidget()
@@ -275,15 +285,32 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
         
-        # File list
+        # Upload log - increased size as it's more important
+        self.upload_log = QTextEdit()
+        self.upload_log.setReadOnly(True)
+        self.upload_log.setMinimumHeight(250)  # Increased minimum height
+        layout.addWidget(self.upload_log)
+        
+        # File list - reduced relative importance
         self.file_list = QTextEdit()
         self.file_list.setReadOnly(True)
+        self.file_list.setMaximumHeight(150)  # Limited height for file list
         layout.addWidget(self.file_list)
         
         # Refresh button
         self.refresh_button = QPushButton("Refresh File List")
         self.refresh_button.clicked.connect(self.update_file_list)
         layout.addWidget(self.refresh_button)
+        
+        # Open uploaded folder button
+        self.open_folder_button = QPushButton("Open Uploaded Folder")
+        self.open_folder_button.clicked.connect(self.open_uploaded_folder)
+        layout.addWidget(self.open_folder_button)
+        
+        # Set up auto-refresh timer (every 2 seconds)
+        self.auto_refresh_timer = QTimer()
+        self.auto_refresh_timer.timeout.connect(self.update_file_list)
+        self.auto_refresh_timer.start(2000)  # Update every 2 seconds
         
         # Initialize
         self.update_file_list()
@@ -324,23 +351,68 @@ class MainWindow(QMainWindow):
     
     def update_file_list(self):
         """Update the list of uploaded files"""
+        # Keep the existing log and append new entries
+        existing_log = self.upload_log.toPlainText()
+        
+        # Collect all files from root and subdirectories
+        all_files = []
+        new_entries = []
+        
         if os.path.exists(UPLOAD_FOLDER):
-            files = os.listdir(UPLOAD_FOLDER)
-            file_info = []
-            
-            for filename in files:
-                filepath = os.path.join(UPLOAD_FOLDER, filename)
-                if os.path.isfile(filepath):
-                    size = os.path.getsize(filepath)
-                    mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
-                    file_info.append(f"{filename} ({size} bytes, {mtime.strftime('%Y-%m-%d %H:%M:%S')})")
-            
-            if file_info:
-                self.file_list.setPlainText("\n".join(file_info))
-            else:
-                self.file_list.setPlainText("No files uploaded yet.")
+            for root, dirs, files in os.walk(UPLOAD_FOLDER):
+                for filename in files:
+                    filepath = os.path.join(root, filename)
+                    if os.path.isfile(filepath):
+                        rel_path = os.path.relpath(filepath, UPLOAD_FOLDER)
+                        size = os.path.getsize(filepath)
+                        mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
+                        
+                        # Check if this file is already in the log to avoid duplicates
+                        entry_text = f"{rel_path} - UPLOADED ({size} bytes)"
+                        if entry_text not in existing_log:
+                            new_entries.append(entry_text)
+                        
+                        all_files.append(f"{rel_path} ({size} bytes, {mtime.strftime('%Y-%m-%d %H:%M:%S')})")
+        
+        # Update upload log with only new entries
+        if new_entries:
+            if existing_log:
+                self.upload_log.append("")  # Add a blank line before new entries
+            for entry in new_entries:
+                self.upload_log.append(entry)
+        elif not existing_log and all_files:
+            # If no existing log but files exist, add all as new entries
+            for file_path, size, mtime in [(f.split('(')[0].strip(), f.split('(')[1].split()[0], f.split(',')[-1].strip()) for f in all_files]:
+                self.upload_log.append(f"{file_path} - UPLOADED ({size} bytes)")
+        
+        # Update file list
+        if all_files:
+            self.file_list.setPlainText("\n".join(all_files))
         else:
-            self.file_list.setPlainText("Upload folder does not exist.")
+            self.file_list.setPlainText("No files uploaded yet.")
+            if not existing_log:
+                self.upload_log.setPlainText("No uploads yet...")
+            
+        # Scroll to bottom of log
+        self.upload_log.moveCursor(QTextCursor.End)
+    
+    def open_uploaded_folder(self):
+        """Open the uploaded folder in the system file explorer"""
+        import subprocess
+        import sys
+        
+        try:
+            if sys.platform == "win32":
+                # On Windows, use explorer to open the folder
+                subprocess.run(["explorer", os.path.abspath(UPLOAD_FOLDER)])
+            elif sys.platform == "darwin":  # macOS
+                # On macOS, use open to open the folder
+                subprocess.run(["open", os.path.abspath(UPLOAD_FOLDER)])
+            else:  # Linux and other Unix-like systems
+                # On Linux, use xdg-open to open the folder
+                subprocess.run(["xdg-open", os.path.abspath(UPLOAD_FOLDER)])
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Could not open folder: {str(e)}")
 
 
 def create_templates():
@@ -354,8 +426,8 @@ def create_templates():
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Transfer - Mobile</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
+    <title>Orbit File Transfer toolkit - Mobile</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -374,84 +446,131 @@ def create_templates():
         h1 {
             color: #333;
             text-align: center;
+            font-size: 24px;
         }
         .status {
-            text-align: center;
             padding: 10px;
             margin: 10px 0;
             border-radius: 5px;
+            font-weight: bold;
         }
+        
         .connected {
             background-color: #d4edda;
             color: #155724;
-            border: 1px solid #c3e6cb;
         }
+        
         .disconnected {
             background-color: #f8d7da;
             color: #721c24;
-            border: 1px solid #f5c6cb;
         }
+        
         .upload-section {
             margin: 20px 0;
-            text-align: center;
         }
-        input[type="file"] {
-            margin: 10px 0;
-            width: 100%;
-        }
-        button {
+        
+        #upload-btn {
             background-color: #007bff;
             color: white;
             border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
+            padding: 20px 40px;  /* Increased padding for larger button */
+            font-size: 20px;     /* Increased font size */
+            border-radius: 10px; /* Increased border radius */
             cursor: pointer;
-            font-size: 16px;
+            display: inline-block;
+            width: auto;
+            min-height: 60px;    /* Minimum height for easier tapping */
         }
-        button:hover {
+        
+        #upload-btn:hover {
             background-color: #0056b3;
         }
-        button:disabled {
+        
+        #upload-btn:disabled {
             background-color: #6c757d;
             cursor: not-allowed;
         }
+        
         .progress-container {
             margin: 20px 0;
+            position: relative;
         }
+        
         .progress-bar {
             width: 100%;
-            height: 20px;
-            background-color: #e9ecef;
-            border-radius: 10px;
+            height: 30px;       /* Increased height to accommodate text */
+            background-color: #e0e0e0;
+            border-radius: 15px; /* Increased border radius */
             overflow: hidden;
+            position: relative;
+            display: flex;
+            align-items: center;
         }
+        
         .progress-fill {
             height: 100%;
             background-color: #28a745;
             width: 0%;
-            transition: width 0.3s;
+            transition: width 0.3s ease;
+            position: absolute;
+            top: 0;
+            left: 0;
         }
+        
+        #progress-text {
+            position: absolute;
+            width: 100%;
+            text-align: center;
+            font-weight: bold;
+            font-size: 14px;
+            color: #333;
+            z-index: 2;
+            pointer-events: none;
+        }
+        
         .file-list {
             margin-top: 20px;
+            text-align: left;
         }
+        
         .file-item {
-            padding: 10px;
-            border-bottom: 1px solid #eee;
+            padding: 12px;      /* Increased padding */
+            margin: 8px 0;      /* Increased margin */
+            background-color: #f8f9fa;
+            border-radius: 6px; /* Increased border radius */
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .file-name {
+            flex-grow: 1;
+            font-size: 16px;    /* Increased font size */
+            word-break: break-all;
+        }
+        .file-size {
+            font-size: 14px;    /* Increased font size */
+            color: #6c757d;
+            margin-right: 10px;
+        }
+        .file-status-indicator {
+            font-weight: bold;
+            min-width: 100px;   /* Increased width */
+            text-align: right;
+            font-size: 14px;    /* Increased font size */
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📱 File Transfer</h1>
+        <h1>📱 Orbit File Transfer</h1>
         
         <div id="connection-status" class="status disconnected">
             Connecting...
         </div>
         
         <div class="upload-section">
-            <input type="file" id="file-input" multiple accept="image/*">
-            <br>
-            <button id="upload-btn">📤 Upload Files</button>
+            <input type="file" id="file-input" multiple accept="*" style="display: none;">
+            <button id="upload-btn">📁 Select & Upload Files</button>
         </div>
         
         <div class="progress-container">
@@ -459,6 +578,11 @@ def create_templates():
                 <div class="progress-fill" id="progress-fill"></div>
             </div>
             <div id="progress-text">0%</div>
+        </div>
+        
+        <div class="file-status" id="file-status-container">
+            <h3>File Upload Status:</h3>
+            <div id="file-status-list">No files selected yet.</div>
         </div>
         
         <div class="file-list">
@@ -522,10 +646,26 @@ def create_templates():
                 return;
             }
 
-            const formData = new FormData();
-            for (let i = 0; i < files.length; i++) {
-                formData.append('files', files[i]);
-            }
+            // Disable upload button and show file status
+            const uploadBtn = document.getElementById('upload-btn');
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = 'Uploading...';
+            
+            // Display file statuses
+            const fileStatusList = document.getElementById('file-status-list');
+            fileStatusList.innerHTML = '';
+            
+            Array.from(files).forEach(file => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-status-item';
+                fileItem.id = `status-${file.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                fileItem.innerHTML = `
+                    <span class="file-name">${file.name}</span>
+                    <span class="file-size">(${formatFileSize(file.size)})</span>
+                    <span class="file-status-indicator" id="indicator-${file.name.replace(/[^a-zA-Z0-9]/g, '_')}">⏳ WAITING</span>
+                `;
+                fileStatusList.appendChild(fileItem);
+            });
 
             // Show progress
             const progressFill = document.getElementById('progress-fill');
@@ -534,40 +674,133 @@ def create_templates():
             progressText.textContent = '0%';
 
             try {
-                // Note: Actual progress tracking would require more advanced implementation
-                // For now, we'll simulate progress during upload
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
+                // Upload files in parallel with limited concurrency (3-5 channels)
+                const maxConcurrency = Math.min(5, Math.max(3, files.length)); // Between 3-5 channels
+                const uploadedFiles = [];
+                let completedCount = 0;
 
-                const result = await response.json();
-                
-                if (result.success) {
-                    progressFill.style.width = '100%';
-                    progressText.textContent = '100% - Upload Complete!';
+                // Create a copy of files array to process
+                const filesArray = Array.from(files);
+
+                // Process files in chunks based on max concurrency
+                for (let i = 0; i < filesArray.length; i += maxConcurrency) {
+                    const chunk = filesArray.slice(i, i + maxConcurrency);
                     
-                    // Reset form and refresh file list
-                    fileInput.value = '';
-                    setTimeout(() => {
-                        checkConnection();
-                        progressFill.style.width = '0%';
-                        progressText.textContent = '0%';
-                    }, 1000);
+                    // Upload all files in the current chunk in parallel
+                    const chunkPromises = chunk.map(async (file) => {
+                        const fileNameClean = file.name.replace(/[^a-zA-Z0-9]/g, '_');
+                        const indicatorElement = document.getElementById(`indicator-${fileNameClean}`);
+                        
+                        if (indicatorElement) {
+                            indicatorElement.textContent = '⏳ UPLOADING';
+                            indicatorElement.style.color = '#ffc107';
+                        }
+                        
+                        // Prepare form data for single file
+                        const formData = new FormData();
+                        formData.append('files', file);
+                        
+                        try {
+                            const uploadResponse = await fetch('/upload', {
+                                method: 'POST',
+                                body: formData
+                            });
+
+                            const result = await uploadResponse.json();
+                            
+                            completedCount++;
+                            const totalProgress = (completedCount / filesArray.length) * 100;
+                            progressFill.style.width = `${totalProgress}%`;
+                            progressText.textContent = `${Math.round(totalProgress)}% - ${completedCount}/${filesArray.length} files`;
+
+                            if (result.success) {
+                                // Mark file as uploaded
+                                if (indicatorElement) {
+                                    indicatorElement.textContent = '✅ UPLOADED';
+                                    indicatorElement.style.color = '#28a745';
+                                }
+                                
+                                uploadedFiles.push(...result.files);
+                                return result;
+                            } else {
+                                // Mark file as failed
+                                if (indicatorElement) {
+                                    indicatorElement.textContent = '❌ FAILED';
+                                    indicatorElement.style.color = '#dc3545';
+                                }
+                                console.error(`Failed to upload ${file.name}:`, result.error);
+                                return null;
+                            }
+                        } catch (error) {
+                            completedCount++;
+                            const totalProgress = (completedCount / filesArray.length) * 100;
+                            progressFill.style.width = `${totalProgress}%`;
+                            progressText.textContent = `${Math.round(totalProgress)}% - ${completedCount}/${filesArray.length} files`;
+                            
+                            // Mark file as failed
+                            if (indicatorElement) {
+                                indicatorElement.textContent = '❌ FAILED';
+                                indicatorElement.style.color = '#dc3545';
+                            }
+                            console.error(`Upload error for ${file.name}:`, error);
+                            return null;
+                        }
+                    });
                     
-                    alert(`Successfully uploaded ${result.files.length} file(s)!`);
-                } else {
-                    alert('Upload failed: ' + result.message);
+                    // Wait for all files in the current chunk to complete
+                    await Promise.all(chunkPromises);
                 }
+                
+                // Final update after all files complete
+                progressFill.style.width = '100%';
+                progressText.textContent = '100% - All files processed!';
+                
+                // Re-enable button
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '📷 Select & Upload Files';
+                
+                // Reset form and refresh file list
+                fileInput.value = '';
+                setTimeout(() => {
+                    checkConnection();
+                    progressFill.style.width = '0%';
+                    progressText.textContent = '0%';
+                }, 1000);
+                
+                alert(`Successfully uploaded ${uploadedFiles.length} file(s)!`);
             } catch (error) {
+                // Re-enable button on error
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '📷 Select & Upload Files';
                 console.error('Upload error:', error);
                 alert('Upload failed: ' + error.message);
             }
         }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
 
         // Set up event listeners
         document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('upload-btn').addEventListener('click', uploadFiles);
+            // When upload button is clicked, trigger file input
+            const uploadBtn = document.getElementById('upload-btn');
+            const fileInput = document.getElementById('file-input');
+            
+            uploadBtn.addEventListener('click', function() {
+                fileInput.click();
+            });
+            
+            // When files are selected, automatically upload them
+            fileInput.addEventListener('change', function(event) {
+                if (event.target.files.length > 0) {
+                    uploadFiles();
+                }
+            });
             
             // Check connection status every 5 seconds
             setInterval(checkConnection, 5000);
@@ -723,6 +956,7 @@ def main():
     
     # Start desktop GUI
     app_gui = QApplication(sys.argv)
+    app_gui.setWindowIcon(QIcon('icon.png'))  # Set icon for the entire application
     window = MainWindow()
     window.show()
     sys.exit(app_gui.exec_())
