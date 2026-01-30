@@ -1,0 +1,56 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Get tag
+        id: tag
+        run: |
+          echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          
+      - name: Setup Node.js (for GitHub CLI)
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          
+      - name: Install GitHub CLI
+        run: |
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh
+
+      - name: Create Release
+        id: create_release
+        run: |
+          gh release create ${{ github.ref }} \
+            --title "Release ${{ steps.tag.outputs.tag }}" \
+            --notes "Automated release for version ${{ steps.tag.outputs.tag }}" \
+            --draft=false \
+            --prerelease=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Package Source Code
+        run: |
+          # Create a clean directory for the source distribution
+          mkdir orbit-file-transfer-src-${{ steps.tag.outputs.tag }}
+          # Copy all necessary files
+          cp -r main.py templates requirements.txt README.md PROJECT_SUMMARY.md icon.png icon.ico .gitignore orbit-file-transfer-src-${{ steps.tag.outputs.tag }}/
+          # Create a zip archive
+          zip -r orbit-file-transfer-src-${{ steps.tag.outputs.tag }}.zip orbit-file-transfer-src-${{ steps.tag.outputs.tag }}/
+
+      - name: Upload Source Distribution
+        run: |
+          gh release upload ${{ github.ref_name }} orbit-file-transfer-src-${{ steps.tag.outputs.tag }}.zip --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
