@@ -252,7 +252,7 @@ def get_progress(session_id):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Orbit File Transfer toolkit")
+        self.setWindowTitle("Orbit File Transfer")
         self.setWindowIcon(QIcon('icon.png'))  # Set the application icon
         self.setGeometry(100, 100, 600, 700)  # Increased height from 500 to 700
         
