@@ -77,7 +77,14 @@ class CommunicationThread(QObject):
         current_ip = get_local_ip()
         
         # Start the Flask server
-        self.app.run(host='0.0.0.0', port=5000, debug=False, threaded=True, use_reloader=False)
+        try:
+            self.app.run(host='0.0.0.0', port=5000, debug=True, threaded=True, use_reloader=False)
+        except OSError:
+            # If port 5000 is busy, try another port
+            import random
+            port = random.randint(5001, 5999)
+            print(f"Port 5000 busy, trying port {port}")
+            self.app.run(host='0.0.0.0', port=port, debug=True, threaded=True, use_reloader=False)
 
 
 @app.route('/')
@@ -950,13 +957,11 @@ def main():
     
     create_templates()
     
-    app_thread = threading.Thread(target=lambda: app.run(host='0.0.0.0', port=5000, debug=False, threaded=True, use_reloader=False))
-    app_thread.daemon = True
-    app_thread.start()
-    
-    # Start desktop GUI
+    # Start desktop GUI (which will start the Flask server in a thread)
     app_gui = QApplication(sys.argv)
-    app_gui.setWindowIcon(QIcon('icon.png'))  # Set icon for the entire application
+    # Check if icon.png exists, otherwise continue without setting icon
+    if os.path.exists('icon.png'):
+        app_gui.setWindowIcon(QIcon('icon.png'))  # Set icon for the entire application
     window = MainWindow()
     window.show()
     sys.exit(app_gui.exec_())
