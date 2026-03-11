@@ -4,6 +4,8 @@ File Transfer Application
 Desktop application that allows mobile devices to upload files wirelessly
 """
 
+__version__ = "1.1.11"
+
 import os
 import sys
 import socket
@@ -12,13 +14,19 @@ import subprocess
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QPushButton, QTextEdit, QProgressBar, QMessageBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QPushButton, QTextEdit, QProgressBar, QMessageBox, QComboBox
 from PyQt5.QtCore import QTimer, pyqtSignal, QObject, Qt
 from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtGui import QTextCursor
 import qrcode
 import io
 import base64
+
+if sys.platform == "win32":
+    try:
+        import wmi
+    except ImportError:
+        wmi = None
 
 
 # Configuration
@@ -64,6 +72,54 @@ def get_local_ip():
         return "127.0.0.1"
 
 
+def get_all_local_ips():
+    """Get all local IP addresses from all network interfaces"""
+    ips = []
+    try:
+        hostname = socket.gethostname()
+        addresses = socket.getaddrinfo(hostname, None, socket.AF_INET)
+        for addr in addresses:
+            ip = addr[4][0]
+            if ip not in ips and not ip.startswith('127.'):
+                ips.append(ip)
+    except Exception:
+        pass
+    
+    if not ips:
+        ips.append("127.0.0.1")
+    
+    return ips
+
+
+def get_interface_name_by_ip(ip):
+    """Get the actual network interface name for a given IP address"""
+    if sys.platform == "win32" and wmi is not None:
+        try:
+            c = wmi.WMI()
+            for interface in c.Win32_NetworkAdapterConfiguration():
+                if interface.IPAddress:
+                    for addr in interface.IPAddress:
+                        if addr == ip and interface.NetConnectionID:
+                            return interface.NetConnectionID
+        except Exception:
+            pass
+    
+    try:
+        import psutil
+        for interface, addrs in psutil.net_if_addrs().items():
+            for addr in addrs:
+                if addr.address == ip:
+                    interface_name = interface.replace('_', ' ')
+                    if sys.platform == "darwin":
+                        return interface_name
+                    else:
+                        return interface_name
+    except Exception:
+        pass
+    
+    return "Network Interface"
+
+
 class CommunicationThread(QObject):
     """Thread for handling Flask server communication"""
     update_signal = pyqtSignal(str)
@@ -83,7 +139,7 @@ class CommunicationThread(QObject):
 @app.route('/')
 def index():
     """Serve the mobile device interface"""
-    return render_template('index.html')
+    return render_template('index.html', version=__version__)
 
 
 @app.route('/desktop')
@@ -262,7 +318,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central_widget)
         
         # Title
-        title_label = QLabel("Mobile File Transfer")
+        title_label = QLabel(f"Mobile File Transfer v{__version__}")
         title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title_label)
         
@@ -273,6 +329,11 @@ class MainWindow(QMainWindow):
         # IP Address
         self.ip_label = QLabel("IP Address: Detecting...")
         layout.addWidget(self.ip_label)
+        
+        # Network interface selector
+        self.interface_selector = QComboBox()
+        self.interface_selector.currentIndexChanged.connect(self.on_interface_changed)
+        layout.addWidget(self.interface_selector)
         
         # QR Code Display
         self.qr_label = QLabel("QR Code will appear here")
@@ -314,8 +375,28 @@ class MainWindow(QMainWindow):
         
         # Initialize
         self.update_file_list()
+        self.populate_interface_selector()
         self.start_server()
         
+    def populate_interface_selector(self):
+        """Populate the network interface selector with available IPs"""
+        ips = get_all_local_ips()
+        self.interface_selector.clear()
+        for ip in ips:
+            interface_name = get_interface_name_by_ip(ip)
+            self.interface_selector.addItem(f"{ip} ({interface_name})", ip)
+        
+        if ips:
+            self.interface_selector.setCurrentIndex(0)
+    
+    def on_interface_changed(self, index):
+        """Handle interface selection change"""
+        if index >= 0:
+            new_ip = self.interface_selector.itemData(index)
+            global current_ip
+            current_ip = new_ip
+            self.update_ui()
+    
     def start_server(self):
         """Start the Flask server in a separate thread"""
         self.comm_thread = CommunicationThread()
