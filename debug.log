@@ -1,0 +1,64 @@
+[50332:53768:0409/164213.967:WARNING:t_skinfilemap.cpp(56)] SGRenderLog:CheckUpdate newMem.OpenMem failed, szNewMem:Local\sgime_skin.v34.filemap.sogouime err:系统错误2: 系统找不到指定的文件。  
+打开Filemap失败: Local\sgime_skin.v34.filemap.sogouime3184aa93e07
+[50332:53768:0409/164213.967:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:1
+[50332:53768:0409/164213.967:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:34
+[50332:53768:0409/164214.074:WARNING:t_skinfilemap.cpp(63)] SGRenderLog:CheckUpdate newMem.OpenMem Suc, szNewMem:Local\sgime_skin.Dpi144.v34.filemap.sogouime
+[50332:53768:0409/164214.074:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:34
+[50332:53768:0409/164214.074:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:34
+[50332:43992:0409/164214.153:WARNING:n_flashIPCUtil.cpp(124)] n_flashIPCUtil::IPCNSync t_flashStubImpl::CreateControl
+[19080:44300:0409/165250.356:WARNING:t_skinfilemap.cpp(56)] SGRenderLog:CheckUpdate newMem.OpenMem failed, szNewMem:Local\sgime_skin.v34.filemap.sogouime err:系统错误2: 系统找不到指定的文件。  
+打开Filemap失败: Local\sgime_skin.v34.filemap.sogouime3184aa93e07
+[19080:44300:0409/165250.356:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:1
+[19080:44300:0409/165250.356:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:34
+[19080:44300:0409/165250.475:WARNING:t_skinfilemap.cpp(63)] SGRenderLog:CheckUpdate newMem.OpenMem Suc, szNewMem:Local\sgime_skin.Dpi144.v34.filemap.sogouime
+[19080:44300:0409/165250.475:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:34
+[19080:44300:0409/165250.475:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:34
+[19080:38680:0409/165250.528:WARNING:n_flashIPCUtil.cpp(124)] n_flashIPCUtil::IPCNSync t_flashStubImpl::CreateControl
+[52064:30992:0422/175543.130:WARNING:t_skinfilemap.cpp(56)] SGRenderLog:CheckUpdate newMem.OpenMem failed, szNewMem:Local\sgime_skin.v60.filemap.sogouime err:系统错误2: 系统找不到指定的文件。  
+打开Filemap失败: Local\sgime_skin.v60.filemap.sogouime3184aa93e07
+[52064:30992:0422/175543.130:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:1
+[52064:30992:0422/175543.130:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:60
+[52064:30992:0422/175543.246:WARNING:t_skinfilemap.cpp(63)] SGRenderLog:CheckUpdate newMem.OpenMem Suc, szNewMem:Local\sgime_skin.Dpi144.v60.filemap.sogouime
+[52064:30992:0422/175543.246:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:60
+[52064:30992:0422/175543.246:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:60
+[52064:42692:0422/175543.314:WARNING:n_flashIPCUtil.cpp(124)] n_flashIPCUtil::IPCNSync t_flashStubImpl::CreateControl
+[53868:32528:0422/175919.229:WARNING:t_skinfilemap.cpp(56)] SGRenderLog:CheckUpdate newMem.OpenMem failed, szNewMem:Local\sgime_skin.v60.filemap.sogouime err:系统错误2: 系统找不到指定的文件。  
+打开Filemap失败: Local\sgime_skin.v60.filemap.sogouime3184aa93e07
+[53868:32528:0422/175919.229:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:1
+[53868:32528:0422/175919.229:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:60
+[53868:32528:0422/175919.339:WARNING:t_skinfilemap.cpp(63)] SGRenderLog:CheckUpdate newMem.OpenMem Suc, szNewMem:Local\sgime_skin.Dpi144.v60.filemap.sogouime
+[53868:32528:0422/175919.339:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:60
+[53868:32528:0422/175919.339:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:60
+[53868:14640:0422/175919.413:WARNING:n_flashIPCUtil.cpp(124)] n_flashIPCUtil::IPCNSync t_flashStubImpl::CreateControl
+[7340:31340:0422/180042.185:WARNING:t_skinfilemap.cpp(56)] SGRenderLog:CheckUpdate newMem.OpenMem failed, szNewMem:Local\sgime_skin.v60.filemap.sogouime err:系统错误2: 系统找不到指定的文件。  
+打开Filemap失败: Local\sgime_skin.v60.filemap.sogouime3184aa93e07
+[7340:31340:0422/180042.185:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:1
+[7340:31340:0422/180042.185:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:60
+[7340:31340:0422/180042.319:WARNING:t_skinfilemap.cpp(63)] SGRenderLog:CheckUpdate newMem.OpenMem Suc, szNewMem:Local\sgime_skin.Dpi144.v60.filemap.sogouime
+[7340:31340:0422/180042.319:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:60
+[7340:31340:0422/180042.319:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:60
+[7340:41288:0422/180042.397:WARNING:n_flashIPCUtil.cpp(124)] n_flashIPCUtil::IPCNSync t_flashStubImpl::CreateControl
+[56720:43932:0422/180424.125:WARNING:t_skinfilemap.cpp(56)] SGRenderLog:CheckUpdate newMem.OpenMem failed, szNewMem:Local\sgime_skin.v60.filemap.sogouime err:系统错误2: 系统找不到指定的文件。  
+打开Filemap失败: Local\sgime_skin.v60.filemap.sogouime3184aa93e07
+[56720:43932:0422/180424.125:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:1
+[56720:43932:0422/180424.125:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:60
+[56720:43932:0422/180424.236:WARNING:t_skinfilemap.cpp(63)] SGRenderLog:CheckUpdate newMem.OpenMem Suc, szNewMem:Local\sgime_skin.Dpi144.v60.filemap.sogouime
+[56720:43932:0422/180424.236:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:60
+[56720:43932:0422/180424.236:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:60
+[56720:24876:0422/180424.303:WARNING:n_flashIPCUtil.cpp(124)] n_flashIPCUtil::IPCNSync t_flashStubImpl::CreateControl
+[35140:2756:0422/181237.103:WARNING:t_skinfilemap.cpp(56)] SGRenderLog:CheckUpdate newMem.OpenMem failed, szNewMem:Local\sgime_skin.v60.filemap.sogouime err:系统错误2: 系统找不到指定的文件。  
+打开Filemap失败: Local\sgime_skin.v60.filemap.sogouime3184aa93e07
+[35140:2756:0422/181237.103:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:1
+[35140:2756:0422/181237.103:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:60
+[35140:2756:0422/181237.217:WARNING:t_skinfilemap.cpp(63)] SGRenderLog:CheckUpdate newMem.OpenMem Suc, szNewMem:Local\sgime_skin.Dpi144.v60.filemap.sogouime
+[35140:2756:0422/181237.217:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:60
+[35140:2756:0422/181237.217:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:60
+[35140:41356:0422/181237.285:WARNING:n_flashIPCUtil.cpp(124)] n_flashIPCUtil::IPCNSync t_flashStubImpl::CreateControl
+[32076:51332:0422/183451.538:WARNING:t_skinfilemap.cpp(56)] SGRenderLog:CheckUpdate newMem.OpenMem failed, szNewMem:Local\sgime_skin.v60.filemap.sogouime err:系统错误2: 系统找不到指定的文件。  
+打开Filemap失败: Local\sgime_skin.v60.filemap.sogouime3184aa93e07
+[32076:51332:0422/183451.538:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:1
+[32076:51332:0422/183451.538:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:60
+[32076:51332:0422/183451.655:WARNING:t_skinfilemap.cpp(63)] SGRenderLog:CheckUpdate newMem.OpenMem Suc, szNewMem:Local\sgime_skin.Dpi144.v60.filemap.sogouime
+[32076:51332:0422/183451.655:WARNING:t_skinfilemap.cpp(65)] SGRenderLog:CheckUpdate finish: old version:60
+[32076:51332:0422/183451.655:WARNING:t_skinfilemap.cpp(67)] SGRenderLog:CheckUpdate finish: new version:60
+[32076:18300:0422/183451.725:WARNING:n_flashIPCUtil.cpp(124)] n_flashIPCUtil::IPCNSync t_flashStubImpl::CreateControl

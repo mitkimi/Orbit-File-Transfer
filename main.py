@@ -4,17 +4,19 @@ File Transfer Application
 Desktop application that allows mobile devices to upload files wirelessly
 """
 
-__version__ = "1.1.11"
+__version__ = "2.0.22"
 
 import os
 import sys
 import socket
 import threading
 import subprocess
+import json
+import locale
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QPushButton, QTextEdit, QProgressBar, QMessageBox, QComboBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QLabel, QPushButton, QTextEdit, QProgressBar, QMessageBox, QComboBox
 from PyQt5.QtCore import QTimer, pyqtSignal, QObject, Qt
 from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtGui import QTextCursor
@@ -31,9 +33,18 @@ if sys.platform == "win32":
 
 # Configuration
 UPLOAD_FOLDER = 'uploaded'
+DOWNLOAD_FOLDER = 'to_download'
 # Allow all file extensions since we want to support images, videos, and various Apple formats
 ALLOWED_EXTENSIONS = {''}  # Empty set means all extensions are allowed
 MAX_CONTENT_LENGTH = None  # No file size limit to accommodate large video files
+# Image extensions for download page
+IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'heic', 'heif'}
+
+# Video extensions for download page
+VIDEO_EXTENSIONS = {'mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm4v'}
+
+# Media extensions (images + videos) for download page
+MEDIA_EXTENSIONS = IMAGE_EXTENSIONS.union(VIDEO_EXTENSIONS)
 
 # Device-specific upload subdirectories
 import re
@@ -54,10 +65,77 @@ else:
 current_ip = None
 transfer_status = {}
 upload_progress = {}
+pending_log_entries = []  # Entries waiting to be added to the log
+current_language = 'zh'  # Default language
+i18n_data = {}  # i18n data cache
+SETTINGS_FILE = 'settings.json'  # Settings file for language preference
 
 # Import for session management
 from flask import session
 import uuid
+
+
+def load_i18n_data():
+    """Load i18n data from JSON file"""
+    global i18n_data
+    try:
+        with open('i18n.json', 'r', encoding='utf-8') as f:
+            i18n_data = json.load(f)
+    except Exception:
+        i18n_data = {}
+
+
+def get_text(key_path, lang=None):
+    """Get translated text by key path (e.g., 'mobile_page.title')"""
+    if lang is None:
+        lang = current_language
+    
+    if not i18n_data:
+        load_i18n_data()
+    
+    keys = key_path.split('.')
+    try:
+        result = i18n_data[lang]
+        for key in keys:
+            result = result[key]
+        return result
+    except (KeyError, TypeError):
+        return key_path
+
+
+def detect_system_language():
+    """Detect system language and return 'zh' or 'en'"""
+    try:
+        system_lang = locale.getdefaultlocale()[0]
+        if system_lang and system_lang.startswith('zh'):
+            return 'zh'
+        return 'en'
+    except Exception:
+        return 'zh'
+
+
+def load_settings():
+    """Load user settings from file"""
+    global current_language
+    try:
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+                current_language = settings.get('language', detect_system_language())
+        else:
+            current_language = detect_system_language()
+    except Exception:
+        current_language = detect_system_language()
+
+
+def save_settings():
+    """Save user settings to file"""
+    try:
+        settings = {'language': current_language}
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
 
 def get_local_ip():
@@ -177,7 +255,9 @@ def get_device_folder(user_agent):
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    """Handle file uploads from mobile device - one by one"""
+    """Handle file uploads from mobile device"""
+    global pending_log_entries
+    
     if 'files' not in request.files:
         return jsonify({'error': 'No files provided'}), 400
     
@@ -194,6 +274,7 @@ def upload_file():
     upload_progress[session_id] = {'progress': 0, 'status': 'starting', 'total_files': len(files), 'uploaded_files': [], 'current_file': None}
     
     uploaded_files = []
+    new_log_entries = []
     
     try:
         for idx, file in enumerate(files):
@@ -224,11 +305,24 @@ def upload_file():
                 }
                 uploaded_files.append(file_info)
                 upload_progress[session_id]['uploaded_files'].append(file_info)
+                
+                # Collect log entry for this file
+                rel_path = os.path.join(file_info['device_folder'], file_info['filename'])
+                new_log_entries.append(f"{rel_path} - UPLOADED ({file_info['size']} bytes)")
         
         # Update progress to 100% after successful upload
         upload_progress[session_id]['progress'] = 100
         upload_progress[session_id]['status'] = 'completed'
         upload_progress[session_id]['current_file'] = None
+        
+        # Add summary log entry
+        success_count = len(uploaded_files)
+        failed_count = len(files) - success_count
+        new_log_entries.append(f"--- 上传结束: 成功 {success_count}, 失败 {failed_count}, 总数 {len(files)} ---")
+        new_log_entries.append("")  # Blank line after summary
+        
+        # Add all new entries to pending log
+        pending_log_entries.extend(new_log_entries)
         
     except Exception as e:
         upload_progress[session_id]['progress'] = 0
@@ -291,7 +385,20 @@ def get_status():
         'files': files,
         'device_folders': device_folders,
         'total_files': sum(len(folder['files']) for folder in device_folders) + len(files),
-        'upload_progress': upload_progress
+        'upload_progress': upload_progress,
+        'language': current_language
+    })
+
+
+@app.route('/i18n')
+def get_i18n():
+    """Get i18n translations for the current language"""
+    if not i18n_data:
+        load_i18n_data()
+    
+    return jsonify({
+        'language': current_language,
+        'translations': i18n_data.get(current_language, {})
     })
 
 
@@ -302,6 +409,57 @@ def get_progress(session_id):
     return jsonify(progress)
 
 
+@app.route('/download')
+def download_page():
+    """Serve the download page for mobile device"""
+    # Create download folder if it doesn't exist
+    if not os.path.exists(DOWNLOAD_FOLDER):
+        os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+    return render_template('download.html', version=__version__)
+
+
+def is_media_file(filename):
+    """Check if the file is an image or video"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in MEDIA_EXTENSIONS
+
+
+@app.route('/download-list')
+def get_download_list():
+    """Get list of images to download"""
+    images = []
+    
+    if not os.path.exists(DOWNLOAD_FOLDER):
+        os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+    else:
+        try:
+            # Get all files in download folder
+            for filename in os.listdir(DOWNLOAD_FOLDER):
+                file_path = os.path.join(DOWNLOAD_FOLDER, filename)
+                if os.path.isfile(file_path) and is_media_file(filename):
+                    images.append(filename)
+            # Sort alphabetically
+            images.sort()
+        except Exception:
+            pass
+    
+    return jsonify({
+        'images': images,
+        'total_count': len(images)
+    })
+
+
+@app.route('/download-image/<filename>')
+def download_image(filename):
+    """Serve the image file for download"""
+    if not os.path.exists(DOWNLOAD_FOLDER):
+        os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+    
+    try:
+        return send_from_directory(DOWNLOAD_FOLDER, filename)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 404
+
+
 
 
 
@@ -310,17 +468,38 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Orbit File Transfer")
         self.setWindowIcon(QIcon('icon.png'))  # Set the application icon
-        self.setGeometry(100, 100, 600, 700)  # Increased height from 500 to 700
+        self.setGeometry(100, 100, 600, 700)  # Reverted height since language selector no longer needs extra space
+        
+        # Load settings and i18n data
+        load_settings()
+        load_i18n_data()
         
         # Create central widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
         
+        # Title and language selector in a horizontal layout
+        title_layout = QHBoxLayout()
+        
         # Title
         title_label = QLabel(f"Mobile File Transfer v{__version__}")
         title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
-        layout.addWidget(title_label)
+        title_layout.addWidget(title_label)
+        
+        # Add spacer to push language selector to the right
+        title_layout.addStretch()
+        
+        # Language selector (smaller size)
+        self.language_selector = QComboBox()
+        self.language_selector.addItem(get_text('language_zh'), 'zh')
+        self.language_selector.addItem(get_text('language_en'), 'en')
+        self.language_selector.setCurrentIndex(0 if current_language == 'zh' else 1)
+        self.language_selector.currentIndexChanged.connect(self.on_language_changed)
+        self.language_selector.setFixedWidth(120)  # Set fixed width to make it smaller
+        title_layout.addWidget(self.language_selector)
+        
+        layout.addLayout(title_layout)
         
         # Connection status
         self.status_label = QLabel("Status: Starting server...")
@@ -368,6 +547,11 @@ class MainWindow(QMainWindow):
         self.open_folder_button.clicked.connect(self.open_uploaded_folder)
         layout.addWidget(self.open_folder_button)
         
+        # Open download folder button
+        self.open_download_folder_button = QPushButton("Open Download Folder (to_download)")
+        self.open_download_folder_button.clicked.connect(self.open_download_folder)
+        layout.addWidget(self.open_download_folder_button)
+        
         # Set up auto-refresh timer (every 2 seconds)
         self.auto_refresh_timer = QTimer()
         self.auto_refresh_timer.timeout.connect(self.update_file_list)
@@ -377,6 +561,28 @@ class MainWindow(QMainWindow):
         self.update_file_list()
         self.populate_interface_selector()
         self.start_server()
+        
+        # Update UI with current language
+        self.update_ui_language()
+    
+    def on_language_changed(self, index):
+        """Handle language selection change"""
+        global current_language
+        if index >= 0:
+            new_lang = self.language_selector.itemData(index)
+            if new_lang != current_language:
+                current_language = new_lang
+                save_settings()
+                self.update_ui_language()
+    
+    def update_ui_language(self):
+        """Update UI text based on current language"""
+        self.setWindowTitle(get_text('app_title'))
+        self.status_label.setText(f"{get_text('server_status')}: {get_text('running')}")
+        self.ip_label.setText(f"{get_text('ip_address')}: {current_ip or 'Detecting...'}")
+        self.refresh_button.setText(get_text('refresh'))
+        self.open_folder_button.setText(get_text('open_uploaded_folder'))
+        self.open_download_folder_button.setText(get_text('open_download_folder'))
         
     def populate_interface_selector(self):
         """Populate the network interface selector with available IPs"""
@@ -410,7 +616,7 @@ class MainWindow(QMainWindow):
     def update_ui(self):
         """Update UI with IP address and QR code"""
         if current_ip:
-            self.ip_label.setText(f"IP Address: {current_ip}:5000")
+            self.ip_label.setText(f"{get_text('ip_address')}: {current_ip}:5000")
             
             # Generate QR code
             qr_data = f"http://{current_ip}:5000/"
@@ -431,13 +637,14 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Status: Error getting IP address")
     
     def update_file_list(self):
-        """Update the list of uploaded files"""
-        # Keep the existing log and append new entries
+        """Update the list of uploaded files with improved logging"""
+        global pending_log_entries
+        
+        # Keep the existing log
         existing_log = self.upload_log.toPlainText()
         
         # Collect all files from root and subdirectories
         all_files = []
-        new_entries = []
         
         if os.path.exists(UPLOAD_FOLDER):
             for root, dirs, files in os.walk(UPLOAD_FOLDER):
@@ -447,32 +654,23 @@ class MainWindow(QMainWindow):
                         rel_path = os.path.relpath(filepath, UPLOAD_FOLDER)
                         size = os.path.getsize(filepath)
                         mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
-                        
-                        # Check if this file is already in the log to avoid duplicates
-                        entry_text = f"{rel_path} - UPLOADED ({size} bytes)"
-                        if entry_text not in existing_log:
-                            new_entries.append(entry_text)
-                        
                         all_files.append(f"{rel_path} ({size} bytes, {mtime.strftime('%Y-%m-%d %H:%M:%S')})")
         
-        # Update upload log with only new entries
-        if new_entries:
-            if existing_log:
-                self.upload_log.append("")  # Add a blank line before new entries
-            for entry in new_entries:
+        # Process pending log entries
+        if pending_log_entries:
+            for entry in pending_log_entries:
                 self.upload_log.append(entry)
-        elif not existing_log and all_files:
-            # If no existing log but files exist, add all as new entries
-            for file_path, size, mtime in [(f.split('(')[0].strip(), f.split('(')[1].split()[0], f.split(',')[-1].strip()) for f in all_files]:
-                self.upload_log.append(f"{file_path} - UPLOADED ({size} bytes)")
+            # Clear the pending entries
+            pending_log_entries = []
+        elif not existing_log and not all_files:
+            # Initial state
+            self.upload_log.setPlainText("No uploads yet...")
         
         # Update file list
         if all_files:
             self.file_list.setPlainText("\n".join(all_files))
         else:
             self.file_list.setPlainText("No files uploaded yet.")
-            if not existing_log:
-                self.upload_log.setPlainText("No uploads yet...")
             
         # Scroll to bottom of log
         self.upload_log.moveCursor(QTextCursor.End)
@@ -492,6 +690,24 @@ class MainWindow(QMainWindow):
             else:  # Linux and other Unix-like systems
                 # On Linux, use xdg-open to open the folder
                 subprocess.run(["xdg-open", os.path.abspath(UPLOAD_FOLDER)])
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Could not open folder: {str(e)}")
+    
+    def open_download_folder(self):
+        """Open the download folder in the system file explorer"""
+        import subprocess
+        import sys
+        
+        try:
+            if sys.platform == "win32":
+                # On Windows, use explorer to open the folder
+                subprocess.run(["explorer", os.path.abspath(DOWNLOAD_FOLDER)])
+            elif sys.platform == "darwin":  # macOS
+                # On macOS, use open to open the folder
+                subprocess.run(["open", os.path.abspath(DOWNLOAD_FOLDER)])
+            else:  # Linux and other Unix-like systems
+                # On Linux, use xdg-open to open the folder
+                subprocess.run(["xdg-open", os.path.abspath(DOWNLOAD_FOLDER)])
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Could not open folder: {str(e)}")
 
@@ -670,9 +886,51 @@ def create_templates():
             <h3>Uploaded Files:</h3>
             <div id="file-list-content">No files uploaded yet.</div>
         </div>
+        
+        <div style="margin-top: 30px; text-align: center;">
+            <a href="/download" style="color: #007bff; text-decoration: underline; font-size: 16px;">📥 从电脑上下载</a>
+        </div>
     </div>
 
     <script>
+        // i18n support
+        let i18nData = {};
+        let currentLanguage = 'zh';
+        
+        async function loadI18n() {
+            try {
+                const response = await fetch('/i18n');
+                const data = await response.json();
+                i18nData = data.translations;
+                currentLanguage = data.language;
+                updateUIText();
+            } catch (error) {
+                console.error('Error loading i18n:', error);
+            }
+        }
+        
+        function t(keyPath) {
+            const keys = keyPath.split('.');
+            let result = i18nData;
+            for (const key of keys) {
+                if (result && result[key]) {
+                    result = result[key];
+                } else {
+                    return keyPath;
+                }
+            }
+            return result;
+        }
+        
+        function updateUIText() {
+            document.title = t('mobile_page.title');
+            document.querySelector('h1').textContent = '📱 ' + t('mobile_page.title');
+            document.querySelector('#upload-btn').textContent = '📁 ' + t('mobile_page.select_upload');
+            document.querySelector('#file-status-container h3').textContent = t('mobile_page.upload_status');
+            document.querySelector('.file-list h3').textContent = t('mobile_page.uploaded_files');
+            document.querySelector('a[href="/download"]').textContent = '📥 ' + t('mobile_page.download_from_pc');
+        }
+        
         // Check connection status
         async function checkConnection() {
             try {
@@ -682,10 +940,10 @@ def create_templates():
                 const statusDiv = document.getElementById('connection-status');
                 if (data.connected) {
                     statusDiv.className = 'status connected';
-                    statusDiv.textContent = `Connected! Server: ${data.ip_address}`;
+                    statusDiv.textContent = t('mobile_page.connected') + ' ' + data.ip_address;
                 } else {
                     statusDiv.className = 'status disconnected';
-                    statusDiv.textContent = 'Disconnected from server';
+                    statusDiv.textContent = t('mobile_page.disconnected');
                 }
                 
                 // Update file list
@@ -696,7 +954,7 @@ def create_templates():
                 console.error('Connection error:', error);
                 const statusDiv = document.getElementById('connection-status');
                 statusDiv.className = 'status disconnected';
-                statusDiv.textContent = 'Error connecting to server';
+                statusDiv.textContent = t('mobile_page.error_connecting');
                 return false;
             }
         }
@@ -705,7 +963,7 @@ def create_templates():
             const fileListContent = document.getElementById('file-list-content');
             
             if (files.length === 0) {
-                fileListContent.innerHTML = 'No files uploaded yet.';
+                fileListContent.innerHTML = t('mobile_page.no_files_uploaded');
                 return;
             }
             
@@ -723,14 +981,14 @@ def create_templates():
             const files = fileInput.files;
             
             if (files.length === 0) {
-                alert('Please select at least one file to upload.');
+                alert(t('mobile_page.select_at_least_one'));
                 return;
             }
 
             // Disable upload button and show file status
             const uploadBtn = document.getElementById('upload-btn');
             uploadBtn.disabled = true;
-            uploadBtn.textContent = 'Uploading...';
+            uploadBtn.textContent = t('mobile_page.uploading');
             
             // Display file statuses
             const fileStatusList = document.getElementById('file-status-list');
@@ -743,7 +1001,7 @@ def create_templates():
                 fileItem.innerHTML = `
                     <span class="file-name">${file.name}</span>
                     <span class="file-size">(${formatFileSize(file.size)})</span>
-                    <span class="file-status-indicator" id="indicator-${file.name.replace(/[^a-zA-Z0-9]/g, '_')}">⏳ WAITING</span>
+                    <span class="file-status-indicator" id="indicator-${file.name.replace(/[^a-zA-Z0-9]/g, '_')}">⏳ ${t('mobile_page.uploading_indicator')}</span>
                 `;
                 fileStatusList.appendChild(fileItem);
             });
@@ -752,93 +1010,54 @@ def create_templates():
             const progressFill = document.getElementById('progress-fill');
             const progressText = document.getElementById('progress-text');
             progressFill.style.width = '0%';
-            progressText.textContent = '0%';
+            progressText.textContent = t('mobile_page.uploading');
 
             try {
-                // Upload files in parallel with limited concurrency (3-5 channels)
-                const maxConcurrency = Math.min(5, Math.max(3, files.length)); // Between 3-5 channels
-                const uploadedFiles = [];
-                let completedCount = 0;
+                // Upload ALL files in ONE request
+                const formData = new FormData();
+                Array.from(files).forEach(file => {
+                    formData.append('files', file);
+                });
+                
+                const uploadResponse = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
 
-                // Create a copy of files array to process
-                const filesArray = Array.from(files);
-
-                // Process files in chunks based on max concurrency
-                for (let i = 0; i < filesArray.length; i += maxConcurrency) {
-                    const chunk = filesArray.slice(i, i + maxConcurrency);
-                    
-                    // Upload all files in the current chunk in parallel
-                    const chunkPromises = chunk.map(async (file) => {
-                        const fileNameClean = file.name.replace(/[^a-zA-Z0-9]/g, '_');
-                        const indicatorElement = document.getElementById(`indicator-${fileNameClean}`);
-                        
-                        if (indicatorElement) {
-                            indicatorElement.textContent = '⏳ UPLOADING';
-                            indicatorElement.style.color = '#ffc107';
-                        }
-                        
-                        // Prepare form data for single file
-                        const formData = new FormData();
-                        formData.append('files', file);
-                        
-                        try {
-                            const uploadResponse = await fetch('/upload', {
-                                method: 'POST',
-                                body: formData
-                            });
-
-                            const result = await uploadResponse.json();
-                            
-                            completedCount++;
-                            const totalProgress = (completedCount / filesArray.length) * 100;
-                            progressFill.style.width = `${totalProgress}%`;
-                            progressText.textContent = `${Math.round(totalProgress)}% - ${completedCount}/${filesArray.length} files`;
-
-                            if (result.success) {
-                                // Mark file as uploaded
-                                if (indicatorElement) {
-                                    indicatorElement.textContent = '✅ UPLOADED';
-                                    indicatorElement.style.color = '#28a745';
-                                }
-                                
-                                uploadedFiles.push(...result.files);
-                                return result;
-                            } else {
-                                // Mark file as failed
-                                if (indicatorElement) {
-                                    indicatorElement.textContent = '❌ FAILED';
-                                    indicatorElement.style.color = '#dc3545';
-                                }
-                                console.error(`Failed to upload ${file.name}:`, result.error);
-                                return null;
-                            }
-                        } catch (error) {
-                            completedCount++;
-                            const totalProgress = (completedCount / filesArray.length) * 100;
-                            progressFill.style.width = `${totalProgress}%`;
-                            progressText.textContent = `${Math.round(totalProgress)}% - ${completedCount}/${filesArray.length} files`;
-                            
-                            // Mark file as failed
-                            if (indicatorElement) {
-                                indicatorElement.textContent = '❌ FAILED';
-                                indicatorElement.style.color = '#dc3545';
-                            }
-                            console.error(`Upload error for ${file.name}:`, error);
-                            return null;
-                        }
-                    });
-                    
-                    // Wait for all files in the current chunk to complete
-                    await Promise.all(chunkPromises);
-                }
+                const result = await uploadResponse.json();
                 
                 // Final update after all files complete
                 progressFill.style.width = '100%';
-                progressText.textContent = '100% - All files processed!';
+                progressText.textContent = '100% - ' + t('mobile_page.upload_complete');
+                
+                if (result.success) {
+                    // Mark all files as uploaded
+                    Array.from(files).forEach(file => {
+                        const fileNameClean = file.name.replace(/[^a-zA-Z0-9]/g, '_');
+                        const indicatorElement = document.getElementById(`indicator-${fileNameClean}`);
+                        if (indicatorElement) {
+                            indicatorElement.textContent = '✅ ' + t('mobile_page.uploaded_indicator');
+                            indicatorElement.style.color = '#28a745';
+                        }
+                    });
+                    
+                    alert(t('mobile_page.upload_success') + ' ' + result.files.length + ' ' + t('mobile_page.files'));
+                } else {
+                    // Mark all files as failed
+                    Array.from(files).forEach(file => {
+                        const fileNameClean = file.name.replace(/[^a-zA-Z0-9]/g, '_');
+                        const indicatorElement = document.getElementById(`indicator-${fileNameClean}`);
+                        if (indicatorElement) {
+                            indicatorElement.textContent = '❌ ' + t('mobile_page.failed_indicator');
+                            indicatorElement.style.color = '#dc3545';
+                        }
+                    });
+                    alert(t('mobile_page.upload_failed') + ': ' + result.error);
+                }
                 
                 // Re-enable button
                 uploadBtn.disabled = false;
-                uploadBtn.textContent = '📷 Select & Upload Files';
+                uploadBtn.textContent = '� ' + t('mobile_page.select_upload');
                 
                 // Reset form and refresh file list
                 fileInput.value = '';
@@ -848,13 +1067,22 @@ def create_templates():
                     progressText.textContent = '0%';
                 }, 1000);
                 
-                alert(`Successfully uploaded ${uploadedFiles.length} file(s)!`);
             } catch (error) {
+                // Mark all files as failed
+                Array.from(files).forEach(file => {
+                    const fileNameClean = file.name.replace(/[^a-zA-Z0-9]/g, '_');
+                    const indicatorElement = document.getElementById(`indicator-${fileNameClean}`);
+                    if (indicatorElement) {
+                        indicatorElement.textContent = '❌ ' + t('mobile_page.failed_indicator');
+                        indicatorElement.style.color = '#dc3545';
+                    }
+                });
+                
                 // Re-enable button on error
                 uploadBtn.disabled = false;
-                uploadBtn.textContent = '📷 Select & Upload Files';
+                uploadBtn.textContent = '� ' + t('mobile_page.select_upload');
                 console.error('Upload error:', error);
-                alert('Upload failed: ' + error.message);
+                alert(t('mobile_page.upload_failed') + ': ' + error.message);
             }
         }
         
@@ -868,6 +1096,9 @@ def create_templates():
 
         // Set up event listeners
         document.addEventListener('DOMContentLoaded', () => {
+            // Load i18n first
+            loadI18n();
+            
             // When upload button is clicked, trigger file input
             const uploadBtn = document.getElementById('upload-btn');
             const fileInput = document.getElementById('file-input');
@@ -1016,6 +1247,184 @@ def create_templates():
 </body>
 </html>'''
     
+    # Download interface
+    download_html = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
+    <title>Orbit File Transfer - 下载</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            font-size: 24px;
+            margin-top: 0;
+        }
+        .back-link {
+            display: block;
+            text-align: center;
+            color: #007bff;
+            text-decoration: underline;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        .gallery {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .image-item {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .image-item img,
+        .image-item video {
+            width: 100%;
+            height: auto;
+            border-radius: 6px;
+            display: block;
+        }
+        .image-name {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 14px;
+            color: #333;
+            word-break: break-all;
+        }
+        .empty-message {
+            text-align: center;
+            color: #666;
+            font-size: 16px;
+            padding: 30px;
+        }
+        .hint {
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📥 从电脑上下载</h1>
+        <a href="/" class="back-link">← 返回上传页面</a>
+        <p class="hint">提示：长按图片可以保存到相册</p>
+        
+        <div id="gallery" class="gallery">
+            <div class="empty-message">加载中...</div>
+        </div>
+    </div>
+
+    <script>
+        // i18n support
+        let i18nData = {};
+        let currentLanguage = 'zh';
+        
+        async function loadI18n() {
+            try {
+                const response = await fetch('/i18n');
+                const data = await response.json();
+                i18nData = data.translations;
+                currentLanguage = data.language;
+                updateUIText();
+            } catch (error) {
+                console.error('Error loading i18n:', error);
+            }
+        }
+        
+        function t(keyPath) {
+            const keys = keyPath.split('.');
+            let result = i18nData;
+            for (const key of keys) {
+                if (result && result[key]) {
+                    result = result[key];
+                } else {
+                    return keyPath;
+                }
+            }
+            return result;
+        }
+        
+        function updateUIText() {
+            document.title = t('download_page.title');
+            document.querySelector('h1').textContent = '📥 ' + t('download_page.title');
+            document.querySelector('.back-link').textContent = '← ' + t('download_page.back_to_upload');
+            document.querySelector('.hint').textContent = t('download_page.hint');
+        }
+        
+        async function loadImages() {
+            try {
+                const response = await fetch('/download-list');
+                const data = await response.json();
+                
+                const gallery = document.getElementById('gallery');
+                
+                if (data.images && data.images.length > 0) {
+                    let html = '';
+                    data.images.forEach(image => {
+                        const isVideo = image.match(/\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v)$/i);
+                        if (isVideo) {
+                            html += `
+                                <div class="image-item">
+                                    <video controls>
+                                        <source src="/download-image/${encodeURIComponent(image)}" type="video/mp4">
+                                        Your browser does not support the video tag.
+                                    </video>
+                                    <div class="image-name">${image}</div>
+                                </div>
+                            `;
+                        } else {
+                            html += `
+                                <div class="image-item">
+                                    <img src="/download-image/${encodeURIComponent(image)}" alt="${image}">
+                                    <div class="image-name">${image}</div>
+                                </div>
+                            `;
+                        }
+                    });
+                    gallery.innerHTML = html;
+                } else {
+                    gallery.innerHTML = `
+                        <div class="empty-message">
+                            <p>${t('download_page.no_images')}</p>
+                            <p>${t('download_page.no_images_hint')}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading images:', error);
+                document.getElementById('gallery').innerHTML = `
+                    <div class="empty-message">${t('download_page.load_failed')}</div>
+                `;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadI18n();
+            loadImages();
+        });
+    </script>
+</body>
+</html>'''
+    
     # Write mobile template
     with open(os.path.join(template_dir, 'index.html'), 'w', encoding='utf-8') as f:
         f.write(mobile_html)
@@ -1023,11 +1432,22 @@ def create_templates():
     # Write desktop template
     with open(os.path.join(template_dir, 'desktop.html'), 'w', encoding='utf-8') as f:
         f.write(desktop_html)
+    
+    # Write download template
+    with open(os.path.join(template_dir, 'download.html'), 'w', encoding='utf-8') as f:
+        f.write(download_html)
 
 
 def main():
     if not os.path.exists(UPLOAD_FOLDER):
         os.makedirs(UPLOAD_FOLDER)
+    
+    if not os.path.exists(DOWNLOAD_FOLDER):
+        os.makedirs(DOWNLOAD_FOLDER)
+    
+    # Load settings and i18n data before creating templates
+    load_settings()
+    load_i18n_data()
     
     create_templates()
     

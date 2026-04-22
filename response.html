@@ -172,44 +172,6 @@
     </div>
 
     <script>
-        // i18n support
-        let i18nData = {};
-        let currentLanguage = 'zh';
-        
-        async function loadI18n() {
-            try {
-                const response = await fetch('/i18n');
-                const data = await response.json();
-                i18nData = data.translations;
-                currentLanguage = data.language;
-                updateUIText();
-            } catch (error) {
-                console.error('Error loading i18n:', error);
-            }
-        }
-        
-        function t(keyPath) {
-            const keys = keyPath.split('.');
-            let result = i18nData;
-            for (const key of keys) {
-                if (result && result[key]) {
-                    result = result[key];
-                } else {
-                    return keyPath;
-                }
-            }
-            return result;
-        }
-        
-        function updateUIText() {
-            document.title = t('mobile_page.title');
-            document.querySelector('h1').textContent = '📱 ' + t('mobile_page.title');
-            document.querySelector('#upload-btn').textContent = '📁 ' + t('mobile_page.select_upload');
-            document.querySelector('#file-status-container h3').textContent = t('mobile_page.upload_status');
-            document.querySelector('.file-list h3').textContent = t('mobile_page.uploaded_files');
-            document.querySelector('a[href="/download"]').textContent = '📥 ' + t('mobile_page.download_from_pc');
-        }
-        
         // Check connection status
         async function checkConnection() {
             try {
@@ -219,10 +181,10 @@
                 const statusDiv = document.getElementById('connection-status');
                 if (data.connected) {
                     statusDiv.className = 'status connected';
-                    statusDiv.textContent = t('mobile_page.connected') + ' ' + data.ip_address;
+                    statusDiv.textContent = `Connected! Server: ${data.ip_address}`;
                 } else {
                     statusDiv.className = 'status disconnected';
-                    statusDiv.textContent = t('mobile_page.disconnected');
+                    statusDiv.textContent = 'Disconnected from server';
                 }
                 
                 // Update file list
@@ -233,7 +195,7 @@
                 console.error('Connection error:', error);
                 const statusDiv = document.getElementById('connection-status');
                 statusDiv.className = 'status disconnected';
-                statusDiv.textContent = t('mobile_page.error_connecting');
+                statusDiv.textContent = 'Error connecting to server';
                 return false;
             }
         }
@@ -242,7 +204,7 @@
             const fileListContent = document.getElementById('file-list-content');
             
             if (files.length === 0) {
-                fileListContent.innerHTML = t('mobile_page.no_files_uploaded');
+                fileListContent.innerHTML = 'No files uploaded yet.';
                 return;
             }
             
@@ -260,14 +222,14 @@
             const files = fileInput.files;
             
             if (files.length === 0) {
-                alert(t('mobile_page.select_at_least_one'));
+                alert('Please select at least one file to upload.');
                 return;
             }
 
             // Disable upload button and show file status
             const uploadBtn = document.getElementById('upload-btn');
             uploadBtn.disabled = true;
-            uploadBtn.textContent = t('mobile_page.uploading');
+            uploadBtn.textContent = 'Uploading...';
             
             // Display file statuses
             const fileStatusList = document.getElementById('file-status-list');
@@ -280,7 +242,7 @@
                 fileItem.innerHTML = `
                     <span class="file-name">${file.name}</span>
                     <span class="file-size">(${formatFileSize(file.size)})</span>
-                    <span class="file-status-indicator" id="indicator-${file.name.replace(/[^a-zA-Z0-9]/g, '_')}">⏳ ${t('mobile_page.uploading_indicator')}</span>
+                    <span class="file-status-indicator" id="indicator-${file.name.replace(/[^a-zA-Z0-9]/g, '_')}">⏳ UPLOADING</span>
                 `;
                 fileStatusList.appendChild(fileItem);
             });
@@ -289,7 +251,7 @@
             const progressFill = document.getElementById('progress-fill');
             const progressText = document.getElementById('progress-text');
             progressFill.style.width = '0%';
-            progressText.textContent = t('mobile_page.uploading');
+            progressText.textContent = 'Uploading...';
 
             try {
                 // Upload ALL files in ONE request
@@ -307,7 +269,7 @@
                 
                 // Final update after all files complete
                 progressFill.style.width = '100%';
-                progressText.textContent = '100% - ' + t('mobile_page.upload_complete');
+                progressText.textContent = '100% - Complete!';
                 
                 if (result.success) {
                     // Mark all files as uploaded
@@ -315,28 +277,28 @@
                         const fileNameClean = file.name.replace(/[^a-zA-Z0-9]/g, '_');
                         const indicatorElement = document.getElementById(`indicator-${fileNameClean}`);
                         if (indicatorElement) {
-                            indicatorElement.textContent = '✅ ' + t('mobile_page.uploaded_indicator');
+                            indicatorElement.textContent = '✅ UPLOADED';
                             indicatorElement.style.color = '#28a745';
                         }
                     });
                     
-                    alert(t('mobile_page.upload_success') + ' ' + result.files.length + ' ' + t('mobile_page.files'));
+                    alert(`Successfully uploaded ${result.files.length} file(s)!`);
                 } else {
                     // Mark all files as failed
                     Array.from(files).forEach(file => {
                         const fileNameClean = file.name.replace(/[^a-zA-Z0-9]/g, '_');
                         const indicatorElement = document.getElementById(`indicator-${fileNameClean}`);
                         if (indicatorElement) {
-                            indicatorElement.textContent = '❌ ' + t('mobile_page.failed_indicator');
+                            indicatorElement.textContent = '❌ FAILED';
                             indicatorElement.style.color = '#dc3545';
                         }
                     });
-                    alert(t('mobile_page.upload_failed') + ': ' + result.error);
+                    alert('Upload failed: ' + result.error);
                 }
                 
                 // Re-enable button
                 uploadBtn.disabled = false;
-                uploadBtn.textContent = '� ' + t('mobile_page.select_upload');
+                uploadBtn.textContent = '📷 Select & Upload Files';
                 
                 // Reset form and refresh file list
                 fileInput.value = '';
@@ -352,16 +314,16 @@
                     const fileNameClean = file.name.replace(/[^a-zA-Z0-9]/g, '_');
                     const indicatorElement = document.getElementById(`indicator-${fileNameClean}`);
                     if (indicatorElement) {
-                        indicatorElement.textContent = '❌ ' + t('mobile_page.failed_indicator');
+                        indicatorElement.textContent = '❌ FAILED';
                         indicatorElement.style.color = '#dc3545';
                     }
                 });
                 
                 // Re-enable button on error
                 uploadBtn.disabled = false;
-                uploadBtn.textContent = '� ' + t('mobile_page.select_upload');
+                uploadBtn.textContent = '📷 Select & Upload Files';
                 console.error('Upload error:', error);
-                alert(t('mobile_page.upload_failed') + ': ' + error.message);
+                alert('Upload failed: ' + error.message);
             }
         }
         
@@ -375,9 +337,6 @@
 
         // Set up event listeners
         document.addEventListener('DOMContentLoaded', () => {
-            // Load i18n first
-            loadI18n();
-            
             // When upload button is clicked, trigger file input
             const uploadBtn = document.getElementById('upload-btn');
             const fileInput = document.getElementById('file-input');

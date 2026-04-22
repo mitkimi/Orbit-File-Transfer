@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
+    <title>Orbit File Transfer - 下载</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            font-size: 24px;
+            margin-top: 0;
+        }
+        .back-link {
+            display: block;
+            text-align: center;
+            color: #007bff;
+            text-decoration: underline;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        .gallery {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .image-item {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .image-item img,
+        .image-item video {
+            width: 100%;
+            height: auto;
+            border-radius: 6px;
+            display: block;
+        }
+        .image-name {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 14px;
+            color: #333;
+            word-break: break-all;
+        }
+        .empty-message {
+            text-align: center;
+            color: #666;
+            font-size: 16px;
+            padding: 30px;
+        }
+        .hint {
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📥 从电脑上下载</h1>
+        <a href="/" class="back-link">← 返回上传页面</a>
+        <p class="hint">提示：长按图片可以保存到相册</p>
+        
+        <div id="gallery" class="gallery">
+            <div class="empty-message">加载中...</div>
+        </div>
+    </div>
+
+    <script>
+        // i18n support
+        let i18nData = {};
+        let currentLanguage = 'zh';
+        
+        async function loadI18n() {
+            try {
+                const response = await fetch('/i18n');
+                const data = await response.json();
+                i18nData = data.translations;
+                currentLanguage = data.language;
+                updateUIText();
+            } catch (error) {
+                console.error('Error loading i18n:', error);
+            }
+        }
+        
+        function t(keyPath) {
+            const keys = keyPath.split('.');
+            let result = i18nData;
+            for (const key of keys) {
+                if (result && result[key]) {
+                    result = result[key];
+                } else {
+                    return keyPath;
+                }
+            }
+            return result;
+        }
+        
+        function updateUIText() {
+            document.title = t('download_page.title');
+            document.querySelector('h1').textContent = '📥 ' + t('download_page.title');
+            document.querySelector('.back-link').textContent = '← ' + t('download_page.back_to_upload');
+            document.querySelector('.hint').textContent = t('download_page.hint');
+        }
+        
+        async function loadImages() {
+            try {
+                const response = await fetch('/download-list');
+                const data = await response.json();
+                
+                const gallery = document.getElementById('gallery');
+                
+                if (data.images && data.images.length > 0) {
+                    let html = '';
+                    data.images.forEach(image => {
+                        const isVideo = image.match(/\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v)$/i);
+                        if (isVideo) {
+                            html += `
+                                <div class="image-item">
+                                    <video controls>
+                                        <source src="/download-image/${encodeURIComponent(image)}" type="video/mp4">
+                                        Your browser does not support the video tag.
+                                    </video>
+                                    <div class="image-name">${image}</div>
+                                </div>
+                            `;
+                        } else {
+                            html += `
+                                <div class="image-item">
+                                    <img src="/download-image/${encodeURIComponent(image)}" alt="${image}">
+                                    <div class="image-name">${image}</div>
+                                </div>
+                            `;
+                        }
+                    });
+                    gallery.innerHTML = html;
+                } else {
+                    gallery.innerHTML = `
+                        <div class="empty-message">
+                            <p>${t('download_page.no_images')}</p>
+                            <p>${t('download_page.no_images_hint')}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading images:', error);
+                document.getElementById('gallery').innerHTML = `
+                    <div class="empty-message">${t('download_page.load_failed')}</div>
+                `;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadI18n();
+            loadImages();
+        });
+    </script>
+</body>
+</html>
